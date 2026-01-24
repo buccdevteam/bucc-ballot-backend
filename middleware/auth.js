@@ -1,0 +1,76 @@
+/**
+ * Authentication Middleware
+ * Protects routes that require authentication
+ */
+
+const jwt = require('jsonwebtoken');
+const { AppError } = require('./errorHandler');
+const User = require('../models/User');
+const Admin = require('../models/Admin');
+
+/**
+ * Protect routes - Verify JWT token
+ */
+const protect = async (req, res, next) => {
+  try {
+    // 1) Getting token and check if it's there
+    let token;
+    if (
+      req.headers.authorization &&
+      req.headers.authorization.startsWith('Bearer')
+    ) {
+      token = req.headers.authorization.split(' ')[1];
+    } else if (req.cookies && req.cookies.jwt) {
+      token = req.cookies.jwt;
+    }
+
+    if (!token) {
+      return next(
+        new AppError('You are not logged in! Please log in to get access.', 401)
+      );
+    }
+
+    // 2) Verification token
+    const decoded = await jwt.verify(token, process.env.JWT_SECRET);
+
+    // 3) Check if user/admin still exists
+    let currentUser;
+    if (decoded.role === 'admin' || decoded.role === 'super-admin') {
+      currentUser = await Admin.findById(decoded.id);
+    } else {
+      currentUser = await User.findById(decoded.id);
+    }
+
+    if (!currentUser) {
+      return next(
+        new AppError('The user belonging to this token does no longer exist.', 401)
+      );
+    }
+
+    // 4) Grant access to protected route
+    req.user = {
+      id: currentUser._id,
+      role: decoded.role || 'user',
+    };
+    next();
+  } catch (error) {
+    return next(new AppError('Invalid or expired token', 401));
+  }
+};
+
+/**
+ * Restrict routes to specific roles (e.g., admin only)
+ */
+const restrictTo = (...roles) => {
+  return (req, res, next) => {
+    // roles is an array ['admin', 'user']
+    if (!roles.includes(req.user.role)) {
+      return next(
+        new AppError('You do not have permission to perform this action', 403)
+      );
+    }
+    next();
+  };
+};
+
+module.exports = { protect, restrictTo };
