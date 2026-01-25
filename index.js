@@ -4,8 +4,6 @@ const helmet = require('helmet');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
-const mongoSanitize = require('express-mongo-sanitize');
-const xss = require('xss-clean');
 const hpp = require('hpp');
 const compression = require('compression');
 const morgan = require('morgan');
@@ -58,11 +56,7 @@ app.use(cookieParser());
 // Initialize Passport middleware
 app.use(passport.initialize());
 
-// Data sanitization against NoSQL query injection
-app.use(mongoSanitize());
 
-// Data sanitization against XSS
-app.use(xss());
 
 // Prevent HTTP Parameter Pollution
 app.use(hpp());
