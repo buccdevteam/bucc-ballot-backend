@@ -9,6 +9,8 @@ const { protect } = require('../middleware/auth');
 
 const router = express.Router();
 
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:4060';
+
 // Google OAuth routes
 router.get(
   '/google',
@@ -17,12 +19,23 @@ router.get(
   })
 );
 
+// Custom callback so we redirect to FRONTEND with error message (e.g. non-Babcock email)
 router.get(
   '/google/callback',
-  passport.authenticate('google', {
-    session: false,
-    failureRedirect: '/auth/callback?success=false',
-  }),
+  (req, res, next) => {
+    passport.authenticate('google', { session: false }, (err, user, info) => {
+      if (err) {
+        const msg = err.message || 'Authentication failed';
+        return res.redirect(`${FRONTEND_URL}/auth/callback?success=false&error=${encodeURIComponent(msg)}`);
+      }
+      if (!user) {
+        const msg = info?.message || 'Authentication failed';
+        return res.redirect(`${FRONTEND_URL}/auth/callback?success=false&error=${encodeURIComponent(msg)}`);
+      }
+      req.user = user;
+      next();
+    })(req, res, next);
+  },
   googleCallback
 );
 

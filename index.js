@@ -99,6 +99,14 @@ const categoryRoutes = require('./routes/categoryRoutes');
 const { publicRouter: candidatePublicRoutes, adminRouter: candidateAdminRoutes } = require('./routes/candidateRoutes');
 const { publicRouter: voteRoutes, adminRouter: voteAdminRoutes } = require('./routes/voteRoutes');
 
+app.get('/', (req, res) => {
+  res.status(200).json({
+    status: 'success',
+    message: 'Server is running',
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // User authentication routes (Google OAuth)
 app.use('/api/auth', userAuthRoutes);
 
