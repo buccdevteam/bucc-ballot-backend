@@ -1,9 +1,4 @@
-/**
- * Seed Initial Admin User
- * Run this script once to create the first admin user
- * 
- * Usage: node scripts/seedAdmin.js
- */
+
 
 require('dotenv').config();
 const mongoose = require('mongoose');
@@ -26,7 +21,7 @@ const seedAdmin = async () => {
     // Create admin user
     const admin = await Admin.create({
       email: 'admin@bucc.edu.ng',
-      password: 'admin123', // Will be hashed automatically
+      password: 'admin123', 
       name: 'Admin User',
       role: 'admin',
     });
