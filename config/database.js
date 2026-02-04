@@ -19,6 +19,13 @@ const connectDB = async () => {
     return cachedConnection;
   }
 
+  // Validate MONGODB_URI exists
+  if (!process.env.MONGODB_URI) {
+    const error = new Error('MONGODB_URI is not defined in environment variables');
+    console.error('❌', error.message);
+    throw error;
+  }
+
   try {
     // Connection options optimized for serverless
     const options = {
@@ -31,16 +38,18 @@ const connectDB = async () => {
       retryReads: true,
     };
 
-    const conn = await mongoose.connect(
-      process.env.MONGODB_URI || 'mongodb://localhost:27017/ballot-app',
-      options
-    );
+    const conn = await mongoose.connect(process.env.MONGODB_URI, options);
 
     cachedConnection = conn;
     console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
     return conn;
   } catch (error) {
     console.error('❌ MongoDB connection error:', error.message);
+    console.error('Error details:', {
+      name: error.name,
+      code: error.code,
+      message: error.message,
+    });
     cachedConnection = null;
     
     // In serverless, don't exit process - throw error instead

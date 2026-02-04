@@ -11,6 +11,35 @@ const { globalErrorHandler } = require('./middleware/errorHandler');
 const connectDB = require('./config/database');
 const passport = require('./config/passport');
 
+// Validate critical environment variables
+const validateEnv = () => {
+  const required = ['JWT_SECRET', 'MONGODB_URI'];
+  const missing = required.filter(key => !process.env[key]);
+  
+  if (missing.length > 0) {
+    console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
+    if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+      throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+    }
+  }
+  
+  // Validate JWT_SECRET strength
+  if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
+    console.warn('⚠️  JWT_SECRET should be at least 32 characters long');
+  }
+};
+
+// Validate environment before initialization
+try {
+  validateEnv();
+} catch (error) {
+  console.error('Environment validation failed:', error.message);
+  // In serverless, this will be caught by Vercel's error handler
+  if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+    throw error;
+  }
+}
+
 // Initialize Express app
 const app = express();
 
@@ -24,13 +53,18 @@ const initDB = async () => {
       dbConnected = true;
     } catch (error) {
       console.error('Failed to connect to database:', error);
+      // Reset connection flag to allow retry
+      dbConnected = false;
+      throw error; // Re-throw to be caught by middleware
     }
   }
 };
 
 // Initialize database immediately in non-serverless environments
 if (!process.env.VERCEL) {
-  initDB();
+  initDB().catch(err => {
+    console.error('Initial database connection failed:', err.message);
+  });
 }
 
 // Trust proxy (important if behind reverse proxy like nginx)
@@ -166,6 +200,30 @@ app.use((req, res, next) => {
 
 // Global error handler (must be last)
 app.use(globalErrorHandler);
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (err) => {
+  console.error('UNHANDLED REJECTION! 💥 Shutting down...');
+  console.error(err.name, err.message);
+  console.error(err.stack);
+  
+  // In serverless, don't exit - just log the error
+  if (!process.env.VERCEL && !process.env.NODE_ENV === 'production') {
+    process.exit(1);
+  }
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION! 💥 Shutting down...');
+  console.error(err.name, err.message);
+  console.error(err.stack);
+  
+  // In serverless, don't exit - just log the error
+  if (!process.env.VERCEL && !process.env.NODE_ENV === 'production') {
+    process.exit(1);
+  }
+});
 
 // Start server only in non-serverless environments
 if (!process.env.VERCEL && require.main === module) {

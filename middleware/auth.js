@@ -30,8 +30,19 @@ const protect = async (req, res, next) => {
       );
     }
 
-    // 2) Verification token
-    const decoded = await jwt.verify(token, process.env.JWT_SECRET);
+    // 2) Verification token (jwt.verify is synchronous)
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      if (err.name === 'TokenExpiredError') {
+        return next(new AppError('Your token has expired! Please log in again.', 401));
+      }
+      if (err.name === 'JsonWebTokenError') {
+        return next(new AppError('Invalid token! Please log in again.', 401));
+      }
+      throw err;
+    }
 
     // 3) Check if user/admin still exists
     let currentUser;
@@ -54,7 +65,8 @@ const protect = async (req, res, next) => {
     };
     next();
   } catch (error) {
-    return next(new AppError('Invalid or expired token', 401));
+    console.error('Auth middleware error:', error);
+    return next(new AppError('Authentication failed. Please try again.', 401));
   }
 };
 

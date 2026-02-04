@@ -40,12 +40,17 @@ const adminSchema = new mongoose.Schema({
 });
 
 // Hash password before saving
-adminSchema.pre('save', async function () {
+adminSchema.pre('save', async function (next) {
   // Only hash the password if it has been modified (or is new)
-  if (!this.isModified('password')) return;
+  if (!this.isModified('password')) return next();
 
-  // Hash password with cost of 12
-  this.password = await bcrypt.hash(this.password, 12);
+  try {
+    // Hash password with cost of 12
+    this.password = await bcrypt.hash(this.password, 12);
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
 // Instance method to check password

@@ -11,9 +11,23 @@ const router = express.Router();
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:4060';
 
+// Check if Google OAuth is configured
+const isGoogleOAuthConfigured = () => {
+  return !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+};
+
 // Google OAuth routes
 router.get(
   '/google',
+  (req, res, next) => {
+    if (!isGoogleOAuthConfigured()) {
+      return res.status(503).json({
+        status: 'error',
+        message: 'Google OAuth is not configured on the server',
+      });
+    }
+    next();
+  },
   passport.authenticate('google', {
     scope: ['profile', 'email'],
   })
@@ -23,6 +37,10 @@ router.get(
 router.get(
   '/google/callback',
   (req, res, next) => {
+    if (!isGoogleOAuthConfigured()) {
+      return res.redirect(`${FRONTEND_URL}/auth/callback?success=false&error=${encodeURIComponent('Google OAuth is not configured')}`);
+    }
+    
     passport.authenticate('google', { session: false }, (err, user, info) => {
       if (err) {
         const msg = err.message || 'Authentication failed';

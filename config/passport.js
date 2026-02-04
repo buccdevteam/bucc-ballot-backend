@@ -19,6 +19,13 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       },
     async (accessToken, refreshToken, profile, done) => {
       try {
+        // Validate profile data
+        if (!profile || !profile.emails || !profile.emails[0] || !profile.emails[0].value) {
+          const error = new AppError('Invalid profile data from Google', 400);
+          console.error('Google OAuth error: Invalid profile data');
+          return done(error, null);
+        }
+
         // Validate email domain (adjust based on your requirements)
         const email = profile.emails[0].value;
         const allowedDomains = ['@babcock.edu.ng', '@student.babcock.edu.ng'];
@@ -64,6 +71,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
         await user.updateLastLogin();
         return done(null, user);
       } catch (error) {
+        console.error('Passport Google Strategy error:', error);
         return done(error, null);
       }
     }
