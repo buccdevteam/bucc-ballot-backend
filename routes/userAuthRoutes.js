@@ -26,10 +26,13 @@ router.get(
     passport.authenticate('google', { session: false }, (err, user, info) => {
       if (err) {
         const msg = err.message || 'Authentication failed';
-        return res.redirect(`${FRONTEND_URL}/auth/callback?success=false&error=${encodeURIComponent(msg)}`);
+        const statusCode = err.statusCode || 500;
+        console.error(`Authentication error (${statusCode}):`, msg);
+        return res.redirect(`${FRONTEND_URL}/auth/callback?success=false&error=${encodeURIComponent(msg)}&statusCode=${statusCode}`);
       }
       if (!user) {
         const msg = info?.message || 'Authentication failed';
+        console.error('Authentication failed: No user returned');
         return res.redirect(`${FRONTEND_URL}/auth/callback?success=false&error=${encodeURIComponent(msg)}`);
       }
       req.user = user;

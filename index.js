@@ -11,13 +11,27 @@ const { globalErrorHandler } = require('./middleware/errorHandler');
 const connectDB = require('./config/database');
 const passport = require('./config/passport');
 
-// Connect to database
-connectDB();
-
-// Initialize Passport
-require('./config/passport');
-
+// Initialize Express app
 const app = express();
+
+// Initialize database connection
+// In serverless, this will be called on each request and use cached connection
+let dbConnected = false;
+const initDB = async () => {
+  if (!dbConnected) {
+    try {
+      await connectDB();
+      dbConnected = true;
+    } catch (error) {
+      console.error('Failed to connect to database:', error);
+    }
+  }
+};
+
+// Initialize database immediately in non-serverless environments
+if (!process.env.VERCEL) {
+  initDB();
+}
 
 // Trust proxy (important if behind reverse proxy like nginx)
 app.set('trust proxy', 1);
@@ -83,11 +97,29 @@ const limiter = rateLimit({
 // Apply rate limiting to all requests
 app.use('/api/', limiter);
 
+// Middleware to ensure DB connection before handling requests
+app.use(async (req, res, next) => {
+  try {
+    await initDB();
+    next();
+  } catch (error) {
+    console.error('Database connection failed:', error);
+    res.status(503).json({
+      status: 'error',
+      message: 'Database connection failed. Please try again.',
+    });
+  }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
+  const mongoose = require('mongoose');
+  const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+  
   res.status(200).json({
     status: 'success',
     message: 'Server is running',
+    database: dbStatus,
     timestamp: new Date().toISOString(),
   });
 });
@@ -135,10 +167,13 @@ app.use((req, res, next) => {
 // Global error handler (must be last)
 app.use(globalErrorHandler);
 
-const PORT = process.env.PORT || 5000;
+// Start server only in non-serverless environments
+if (!process.env.VERCEL && require.main === module) {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
+  });
+}
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
-});
-
+// Export for Vercel serverless
 module.exports = app;

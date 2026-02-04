@@ -6,6 +6,7 @@
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const User = require('../models/User');
+const { AppError } = require('../middleware/errorHandler');
 
 // Google OAuth Strategy
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
@@ -24,7 +25,8 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
         const isValidDomain = allowedDomains.some(domain => email.endsWith(domain));
 
         if (!isValidDomain) {
-          return done(new Error('Only Babcock University email addresses are allowed'), null);
+          // Use 403 Forbidden status code for domain restriction
+          return done(new AppError('Only Babcock University email addresses are allowed', 403), null);
         }
 
         // Check if user exists
