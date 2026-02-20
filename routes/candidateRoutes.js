@@ -39,8 +39,14 @@ const createCandidateValidation = [
     .trim()
     .notEmpty()
     .withMessage('Photo URL is required')
-    .isURL()
-    .withMessage('Photo URL must be a valid URL'),
+    .custom((value) => {
+      const isUrl = /^https?:\/\/.+/.test(value);
+      const isDataUrl = /^data:image\/[a-zA-Z]+;base64,.+/.test(value);
+      if (!isUrl && !isDataUrl) {
+        throw new Error('Photo URL must be a valid URL or base64 data URL');
+      }
+      return true;
+    }),
   body('manifesto')
     .trim()
     .notEmpty()
@@ -75,8 +81,15 @@ const updateCandidateValidation = [
   body('photoURL')
     .optional()
     .trim()
-    .isURL()
-    .withMessage('Photo URL must be a valid URL'),
+    .custom((value) => {
+      if (!value) return true;
+      const isUrl = /^https?:\/\/.+/.test(value);
+      const isDataUrl = /^data:image\/[a-zA-Z]+;base64,.+/.test(value);
+      if (!isUrl && !isDataUrl) {
+        throw new Error('Photo URL must be a valid URL or base64 data URL');
+      }
+      return true;
+    }),
   body('manifesto')
     .optional()
     .trim()

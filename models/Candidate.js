@@ -46,9 +46,8 @@ const candidateSchema = new mongoose.Schema({
 });
 
 // Update the updatedAt field before saving
-candidateSchema.pre('save', function (next) {
+candidateSchema.pre('save', function () {
   this.updatedAt = Date.now();
-  next();
 });
 
 const Candidate = mongoose.model('Candidate', candidateSchema);

@@ -10,12 +10,11 @@ const seedAdmin = async () => {
     // Connect to database
     await connectDB();
 
-    // Check if admin already exists
+    // If admin exists, delete it
     const existingAdmin = await Admin.findOne({ email: 'admin@bucc.edu.ng' });
     if (existingAdmin) {
-      console.log('⚠️  Admin user already exists!');
-      console.log('Email:', existingAdmin.email);
-      process.exit(0);
+      await Admin.deleteOne({ email: 'admin@bucc.edu.ng' });
+      console.log('⚠️  Existing admin deleted, creating new one...');
     }
 
     // Create admin user

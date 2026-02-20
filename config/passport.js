@@ -26,15 +26,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
           return done(error, null);
         }
 
-        // Validate email domain (adjust based on your requirements)
         const email = profile.emails[0].value;
-        const allowedDomains = ['@babcock.edu.ng', '@student.babcock.edu.ng'];
-        const isValidDomain = allowedDomains.some(domain => email.endsWith(domain));
-
-        if (!isValidDomain) {
-          // Use 403 Forbidden status code for domain restriction
-          return done(new AppError('Only Babcock University email addresses are allowed', 403), null);
-        }
 
         // Check if user exists
         let user = await User.findOne({ googleId: profile.id });

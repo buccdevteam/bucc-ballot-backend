@@ -14,7 +14,7 @@ const catchAsync = require('../utils/catchAsync');
  */
 exports.getAllCandidates = catchAsync(async (req, res) => {
   const candidates = await Candidate.find()
-    .populate('category', 'title description')
+    .populate('category', 'title description allowAbstain isActive')
     .sort({ createdAt: -1 });
 
   res.status(200).json({

@@ -94,9 +94,9 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 
-// Body parser middleware
-app.use(express.json({ limit: '10kb' })); // Limit payload size
-app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+// Body parser middleware (5mb to allow candidate photos as base64 data URLs)
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // Cookie parser middleware
 app.use(cookieParser());

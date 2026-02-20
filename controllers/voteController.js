@@ -184,6 +184,55 @@ exports.getAllVotes = catchAsync(async (req, res) => {
 });
 
 /**
+ * @route   GET /api/admin/votes/stats
+ * @desc    Get vote statistics (admin only)
+ * @access  Private (Admin)
+ */
+exports.getVoteStats = catchAsync(async (req, res) => {
+  const votes = await Vote.find()
+    .populate('category', 'title')
+    .populate('candidate', 'name');
+
+  const totalVotes = votes.length;
+
+  const categoryBreakdown = {};
+  const candidateBreakdown = {};
+
+  votes.forEach((vote) => {
+    const categoryId = vote.category?._id?.toString();
+    const categoryTitle = vote.category?.title || 'Unknown';
+
+    if (categoryId) {
+      categoryBreakdown[categoryTitle] = (categoryBreakdown[categoryTitle] || 0) + 1;
+    }
+
+    if (!vote.isAbstain && vote.candidate) {
+      const candidateName = vote.candidate.name;
+      candidateBreakdown[candidateName] = (candidateBreakdown[candidateName] || 0) + 1;
+    }
+  });
+
+  const categoryBreakdownArray = Object.entries(categoryBreakdown).map(([category, votes]) => ({
+    category,
+    votes,
+  }));
+
+  const candidateBreakdownArray = Object.entries(candidateBreakdown).map(([candidate, votes]) => ({
+    candidate,
+    votes,
+  }));
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      totalVotes,
+      categoryBreakdown: categoryBreakdownArray,
+      candidateBreakdown: candidateBreakdownArray,
+    },
+  });
+});
+
+/**
  * @route   GET /api/admin/votes/category/:categoryId
  * @desc    Get votes for a specific category (admin only)
  * @access  Private (Admin)

@@ -33,7 +33,7 @@ router.get(
   })
 );
 
-// Custom callback so we redirect to FRONTEND with error message (e.g. non-Babcock email)
+// Custom callback so we redirect to FRONTEND with error message
 router.get(
   '/google/callback',
   (req, res, next) => {
