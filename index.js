@@ -11,34 +11,20 @@ const { globalErrorHandler } = require('./middleware/errorHandler');
 const connectDB = require('./config/database');
 const passport = require('./config/passport');
 
-// Validate critical environment variables
+// Validate critical environment variables (deferred to runtime - do NOT throw at module load)
+// Throwing during load fails Vercel build when env vars are not yet available
 const validateEnv = () => {
   const required = ['JWT_SECRET', 'MONGODB_URI'];
   const missing = required.filter(key => !process.env[key]);
-  
   if (missing.length > 0) {
     console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
-    if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
-      throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
-    }
+    return false;
   }
-  
-  // Validate JWT_SECRET strength
   if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
     console.warn('⚠️  JWT_SECRET should be at least 32 characters long');
   }
+  return true;
 };
-
-// Validate environment before initialization
-try {
-  validateEnv();
-} catch (error) {
-  console.error('Environment validation failed:', error.message);
-  // In serverless, this will be caught by Vercel's error handler
-  if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
-    throw error;
-  }
-}
 
 // Initialize Express app
 const app = express();
@@ -133,6 +119,12 @@ app.use('/api/', limiter);
 
 // Middleware to ensure DB connection before handling requests
 app.use(async (req, res, next) => {
+  if (!validateEnv()) {
+    return res.status(503).json({
+      status: 'error',
+      message: 'Server is misconfigured. Missing required environment variables.',
+    });
+  }
   try {
     await initDB();
     next();
