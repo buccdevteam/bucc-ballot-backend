@@ -33,7 +33,13 @@ const sendErrorProd = (err, res) => {
     });
   } else {
     // Programming or other unknown error: don't leak error details
-    console.error('ERROR 💥', err);
+    // Log full error server-side for debugging (check Vercel/hosting logs)
+    console.error('ERROR 💥 [500]', {
+      name: err.name,
+      code: err.code,
+      message: err.message,
+      stack: err.stack?.split('\n').slice(0, 5),
+    });
     res.status(500).json({
       status: 'error',
       message: 'Something went wrong!',
@@ -47,7 +53,17 @@ const handleCastErrorDB = (err) => {
 };
 
 const handleDuplicateFieldsDB = (err) => {
-  const value = err.errmsg?.match(/(["'])(\\?.)*?\1/)?.[0];
+  let value = 'duplicate value';
+  // MongoDB driver 4+ uses keyValue; older versions use errmsg
+  if (err.keyValue && typeof err.keyValue === 'object') {
+    const keys = Object.keys(err.keyValue);
+    if (keys.length > 0) {
+      value = err.keyValue[keys[0]];
+    }
+  } else if (err.errmsg) {
+    const match = err.errmsg.match(/(["'])(\\?.)*?\1/)?.[0];
+    if (match) value = match;
+  }
   const message = `Duplicate field value: ${value}. Please use another value!`;
   return new AppError(message, 400);
 };
