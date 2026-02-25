@@ -156,6 +156,7 @@ const userAuthRoutes = require('./routes/userAuthRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
 const { publicRouter: candidatePublicRoutes, adminRouter: candidateAdminRoutes } = require('./routes/candidateRoutes');
 const { publicRouter: voteRoutes, adminRouter: voteAdminRoutes } = require('./routes/voteRoutes');
+const validVoterRoutes = require('./routes/validVoterRoutes');
 
 app.get('/', (req, res) => {
   res.status(200).json({
@@ -181,6 +182,7 @@ app.use('/api/votes', voteRoutes);
 app.use('/api/admin/categories', categoryRoutes);
 app.use('/api/admin/candidates', candidateAdminRoutes);
 app.use('/api/admin/votes', voteAdminRoutes);
+app.use('/api/admin/valid-voters', validVoterRoutes);
 
 // 404 handler (must be after all routes)
 app.use((req, res, next) => {

@@ -4,10 +4,55 @@
 
 const Vote = require('../models/Vote');
 const User = require('../models/User');
+const ValidVoter = require('../models/ValidVoter');
 const Category = require('../models/Category');
 const Candidate = require('../models/Candidate');
 const { AppError } = require('../middleware/errorHandler');
 const catchAsync = require('../utils/catchAsync');
+
+const DEFAULT_ELIGIBILITY_DEPARTMENT = 'bucc';
+const VALID_EMAIL_DOMAIN = '@student.babcock.edu.ng';
+
+/**
+ * Check if user is eligible to vote (matric in valid list + student email)
+ */
+async function checkVotingEligibility(user) {
+  if (!user.email || !user.email.toLowerCase().includes(VALID_EMAIL_DOMAIN)) {
+    return { canVote: false, reason: 'Only Babcock University student emails (@student.babcock.edu.ng) are eligible to vote.' };
+  }
+  if (!user.matricNumber || !user.matricNumber.trim()) {
+    return { canVote: false, reason: 'Matric number is required to vote. Please complete your profile.' };
+  }
+  const matricUpper = user.matricNumber.trim().toUpperCase();
+  const validVoter = await ValidVoter.findOne({
+    matricNumber: matricUpper,
+    department: { $regex: new RegExp(`^${DEFAULT_ELIGIBILITY_DEPARTMENT}$`, 'i') },
+  });
+  if (!validVoter) {
+    return { canVote: false, reason: 'Your matric number is not in the list of eligible voters for this election. Please contact support if you believe this is an error.' };
+  }
+  return { canVote: true };
+}
+
+/**
+ * @route   GET /api/votes/eligibility
+ * @desc    Check if current user is eligible to vote
+ * @access  Private (User)
+ */
+exports.getVotingEligibility = catchAsync(async (req, res) => {
+  const user = await User.findById(req.user.id);
+  if (!user) {
+    return res.status(404).json({
+      status: 'success',
+      data: { canVote: false, reason: 'User not found.' },
+    });
+  }
+  const eligibility = await checkVotingEligibility(user);
+  res.status(200).json({
+    status: 'success',
+    data: eligibility,
+  });
+});
 
 /**
  * @route   POST /api/votes
@@ -23,10 +68,18 @@ exports.castVote = catchAsync(async (req, res, next) => {
     return next(new AppError('Category ID is required', 400));
   }
 
-  // Check if user has already voted
+  // Check if user exists and has matric number
   const user = await User.findById(userId);
   if (!user) {
     return next(new AppError('User not found', 404));
+  }
+  if (!user.matricNumber || !user.matricNumber.trim()) {
+    return next(new AppError('Matric number is required to cast a vote. Please complete your profile.', 403));
+  }
+
+  const eligibility = await checkVotingEligibility(user);
+  if (!eligibility.canVote) {
+    return next(new AppError(eligibility.reason || 'You are not eligible to vote.', 403));
   }
 
   // Check if category exists

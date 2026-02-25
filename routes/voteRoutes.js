@@ -8,6 +8,7 @@ const {
   castVote,
   getMyVotes,
   getVotingStatus,
+  getVotingEligibility,
   getAllVotes,
   getVotesByCategory,
   getVoteStats,
@@ -40,6 +41,7 @@ const castVoteValidation = [
 router.post('/', castVoteValidation, validate, castVote);
 router.get('/me', getMyVotes);
 router.get('/status', getVotingStatus);
+router.get('/eligibility', getVotingEligibility);
 
 // Admin routes (require protect first to set req.user, then restrictTo for role check)
 const adminRouter = express.Router();

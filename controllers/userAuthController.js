@@ -113,6 +113,49 @@ exports.getMe = catchAsync(async (req, res, next) => {
 });
 
 /**
+ * @route   PATCH /api/auth/set-matric-number
+ * @desc    Set or update matric number for authenticated user
+ * @access  Private (User)
+ */
+exports.setMatricNumber = catchAsync(async (req, res, next) => {
+  const { matricNumber } = req.body;
+
+  if (!matricNumber || typeof matricNumber !== 'string') {
+    return next(new AppError('Matric number is required', 400));
+  }
+
+  const trimmed = matricNumber.trim();
+  if (!trimmed) {
+    return next(new AppError('Matric number cannot be empty', 400));
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user.id,
+    { matricNumber: trimmed },
+    { new: true, runValidators: true }
+  );
+
+  if (!user) {
+    return next(new AppError('User not found', 404));
+  }
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        photoURL: user.photoURL,
+        matricNumber: user.matricNumber,
+        department: user.department,
+        hasVoted: user.hasVoted,
+      },
+    },
+  });
+});
+
+/**
  * @route   POST /api/auth/logout
  * @desc    User logout
  * @access  Private (User)

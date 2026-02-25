@@ -4,7 +4,7 @@
 
 const express = require('express');
 const passport = require('passport');
-const { googleAuth, googleCallback, verifyToken, getMe, logout } = require('../controllers/userAuthController');
+const { googleAuth, googleCallback, verifyToken, getMe, setMatricNumber, logout } = require('../controllers/userAuthController');
 const { protect } = require('../middleware/auth');
 
 const router = express.Router();
@@ -65,6 +65,7 @@ router.post('/verify-token', verifyToken);
 
 // Protected routes
 router.get('/me', protect, getMe);
+router.patch('/set-matric-number', protect, setMatricNumber);
 router.post('/logout', protect, logout);
 
 module.exports = router;
