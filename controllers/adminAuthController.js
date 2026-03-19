@@ -76,3 +76,33 @@ exports.getMe = catchAsync(async (req, res, next) => {
     },
   });
 });
+
+/**
+ * @route   PATCH /api/admin/auth/change-password
+ * @desc    Change admin password
+ * @access  Private (Admin)
+ */
+exports.changePassword = catchAsync(async (req, res, next) => {
+  const { currentPassword, newPassword } = req.body;
+
+  // 1) Get admin with password
+  const admin = await Admin.findById(req.user.id).select('+password');
+
+  if (!admin) {
+    return next(new AppError('Admin not found', 404));
+  }
+
+  // 2) Verify current password
+  if (!(await admin.correctPassword(currentPassword))) {
+    return next(new AppError('Current password is incorrect', 401));
+  }
+
+  // 3) Update password (pre-save hook will hash it)
+  admin.password = newPassword;
+  await admin.save();
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Password updated successfully',
+  });
+});
