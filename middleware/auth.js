@@ -45,12 +45,18 @@ const protect = async (req, res, next) => {
     }
 
     // 3) Check if user/admin still exists
+    // #region agent log
+    const _t0 = Date.now();
+    // #endregion
     let currentUser;
     if (decoded.role === 'admin' || decoded.role === 'super-admin') {
       currentUser = await Admin.findById(decoded.id);
     } else {
       currentUser = await User.findById(decoded.id);
     }
+    // #region agent log
+    fetch('http://127.0.0.1:7799/ingest/b081a051-05a3-4288-8ed4-9ae9e74f4251',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'aebaeb'},body:JSON.stringify({sessionId:'aebaeb',location:'auth.js:protect',message:'DB user lookup',data:{queryMs:Date.now()-_t0,found:!!currentUser,role:decoded.role||'user'},timestamp:Date.now(),hypothesisId:'H-B'})}).catch(()=>{});
+    // #endregion
 
     if (!currentUser) {
       return next(

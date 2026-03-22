@@ -11,55 +11,11 @@ const { globalErrorHandler } = require('./middleware/errorHandler');
 const connectDB = require('./config/database');
 const passport = require('./config/passport');
 
-// Validate critical environment variables (deferred to runtime - do NOT throw at module load)
-// Throwing during load fails Vercel build when env vars are not yet available
-const validateEnv = () => {
-  const required = ['JWT_SECRET', 'MONGODB_URI'];
-  const missing = required.filter(key => !process.env[key]);
-  if (missing.length > 0) {
-    console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
-    return false;
-  }
-  if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
-    console.warn('⚠️  JWT_SECRET should be at least 32 characters long');
-  }
-  return true;
-};
-
 // Initialize Express app
 const app = express();
 
-// Initialize database connection
-// In serverless, this will be called on each request and use cached connection
-// IMPORTANT: Always verify connection is alive - it can drop due to idle timeout
-const mongoose = require('mongoose');
-let dbConnected = false;
-
-const initDB = async () => {
-  const isAlive = mongoose.connection.readyState === 1;
-  if (dbConnected && isAlive) {
-    return;
-  }
-  if (!isAlive) {
-    dbConnected = false;
-  }
-
-  try {
-    await connectDB();
-    dbConnected = true;
-  } catch (error) {
-    console.error('Failed to connect to database:', error);
-    dbConnected = false;
-    throw error;
-  }
-};
-
-// Initialize database immediately in non-serverless environments
-if (!process.env.VERCEL) {
-  initDB().catch(err => {
-    console.error('Initial database connection failed:', err.message);
-  });
-}
+// Initialize database connection at startup
+connectDB();
 
 // Trust proxy (important if behind reverse proxy like nginx)
 app.set('trust proxy', 1);
@@ -124,26 +80,6 @@ const limiter = rateLimit({
 
 // Apply rate limiting to all requests
 app.use('/api/', limiter);
-
-// Middleware to ensure DB connection before handling requests
-app.use(async (req, res, next) => {
-  if (!validateEnv()) {
-    return res.status(503).json({
-      status: 'error',
-      message: 'Server is misconfigured. Missing required environment variables.',
-    });
-  }
-  try {
-    await initDB();
-    next();
-  } catch (error) {
-    console.error('Database connection failed:', error);
-    res.status(503).json({
-      status: 'error',
-      message: 'Database connection failed. Please try again.',
-    });
-  }
-});
 
 // Health check endpoint
 app.get('/health', (req, res) => {

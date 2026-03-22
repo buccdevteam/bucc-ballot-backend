@@ -24,10 +24,16 @@ async function checkVotingEligibility(user) {
     return { canVote: false, reason: 'Matric number is required to vote. Please complete your profile.' };
   }
   const matricUpper = user.matricNumber.trim().toUpperCase();
+  // #region agent log
+  const _t0 = Date.now();
+  // #endregion
   const validVoter = await ValidVoter.findOne({
     matricNumber: matricUpper,
     department: { $regex: new RegExp(`^${DEFAULT_ELIGIBILITY_DEPARTMENT}$`, 'i') },
   });
+  // #region agent log
+  fetch('http://127.0.0.1:7799/ingest/b081a051-05a3-4288-8ed4-9ae9e74f4251',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'aebaeb'},body:JSON.stringify({sessionId:'aebaeb',location:'voteController.js:checkVotingEligibility',message:'ValidVoter regex query',data:{queryMs:Date.now()-_t0,found:!!validVoter,matricUpper,department:DEFAULT_ELIGIBILITY_DEPARTMENT},timestamp:Date.now(),hypothesisId:'H-D'})}).catch(()=>{});
+  // #endregion
   if (!validVoter) {
     return { canVote: false, reason: 'Your matric number is not in the list of eligible voters for this election. Please contact support if you believe this is an error.' };
   }
