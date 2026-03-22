@@ -13,25 +13,45 @@ const catchAsync = require('../utils/catchAsync');
  * @access  Public
  */
 exports.getAllCandidates = catchAsync(async (req, res) => {
-  // #region agent log
-  const _t0 = Date.now();
-  // #endregion
+  const t0 = Date.now();
   const candidates = await Candidate.find()
     .populate('category', 'title description allowAbstain isActive')
-    .sort({ createdAt: -1 });
-  // #region agent log
-  const _queryMs = Date.now() - _t0;
-  const _payload = JSON.stringify({ status: 'success', results: candidates.length, data: { candidates } });
-  const _payloadKB = Math.round(_payload.length / 1024);
-  const _hasBase64 = candidates.some(c => typeof c.photoURL === 'string' && c.photoURL.startsWith('data:'));
-  fetch('http://127.0.0.1:7799/ingest/b081a051-05a3-4288-8ed4-9ae9e74f4251',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'aebaeb'},body:JSON.stringify({sessionId:'aebaeb',location:'candidateController.js:getAllCandidates',message:'Query complete',data:{queryMs:_queryMs,candidateCount:candidates.length,payloadKB:_payloadKB,hasBase64Photos:_hasBase64},timestamp:Date.now(),hypothesisId:'H-A,H-C'})}).catch(()=>{});
-  // #endregion
+    .sort({ createdAt: -1 })
+    .lean();
+  const queryMs = Date.now() - t0;
+
   res.status(200).json({
     status: 'success',
     results: candidates.length,
     data: {
       candidates,
     },
+  });
+
+  // Defer debug logging so it never blocks the response
+  setImmediate(() => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1000);
+    fetch('http://127.0.0.1:7799/ingest/b081a051-05a3-4288-8ed4-9ae9e74f4251', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'aebaeb' },
+      body: JSON.stringify({
+        sessionId: 'aebaeb',
+        location: 'candidateController.js:getAllCandidates',
+        message: 'Query complete',
+        data: {
+          queryMs,
+          candidateCount: candidates.length,
+          payloadKB: Math.round(JSON.stringify(candidates).length / 1024),
+          hasBase64Photos: candidates.some((c) => typeof c.photoURL === 'string' && c.photoURL.startsWith('data:')),
+        },
+        timestamp: Date.now(),
+        hypothesisId: 'H-A,H-C',
+      }),
+      signal: controller.signal,
+    })
+      .finally(() => clearTimeout(timeout))
+      .catch(() => {});
   });
 });
 
