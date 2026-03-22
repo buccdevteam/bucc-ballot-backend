@@ -41,3 +41,11 @@ The Category model has `title: unique: true`. If a category with the same title 
 ## 6. CORS
 
 If `FRONTEND_URL` is wrong or missing, the browser may block responses. Ensure it matches your production frontend origin exactly (e.g. `https://bucc-ballot.vercel.app`).
+
+## 7. Intermittent "timeout exceeded" Errors
+
+If requests sometimes fail with timeout (e.g. after ~15–25 seconds), it’s usually related to database or serverless cold starts:
+
+- **MongoDB Atlas region**: Use a cluster in the same region as your backend (e.g. Vercel’s deployment region).
+- **Connection pool**: The backend uses connection pooling. If connections are often idle, they can drop; the app reconnects automatically.
+- **Cold starts**: On Vercel, first requests after idle can be slower. The frontend timeout is 25s to absorb this.

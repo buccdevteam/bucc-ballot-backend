@@ -31,18 +31,26 @@ const app = express();
 
 // Initialize database connection
 // In serverless, this will be called on each request and use cached connection
+// IMPORTANT: Always verify connection is alive - it can drop due to idle timeout
+const mongoose = require('mongoose');
 let dbConnected = false;
+
 const initDB = async () => {
-  if (!dbConnected) {
-    try {
-      await connectDB();
-      dbConnected = true;
-    } catch (error) {
-      console.error('Failed to connect to database:', error);
-      // Reset connection flag to allow retry
-      dbConnected = false;
-      throw error; // Re-throw to be caught by middleware
-    }
+  const isAlive = mongoose.connection.readyState === 1;
+  if (dbConnected && isAlive) {
+    return;
+  }
+  if (!isAlive) {
+    dbConnected = false;
+  }
+
+  try {
+    await connectDB();
+    dbConnected = true;
+  } catch (error) {
+    console.error('Failed to connect to database:', error);
+    dbConnected = false;
+    throw error;
   }
 };
 

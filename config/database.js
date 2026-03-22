@@ -28,12 +28,14 @@ const connectDB = async () => {
 
   try {
     // Connection options optimized for serverless
+    // maxIdleTimeMS: 60000 = keep connections 60s to avoid frequent reconnects
+    // serverSelectionTimeoutMS: 15s to allow cold Atlas clusters to wake
     const options = {
-      serverSelectionTimeoutMS: 10000, // Timeout after 10s instead of 30s
+      serverSelectionTimeoutMS: 15000,
       socketTimeoutMS: 45000,
-      maxPoolSize: 10, // Limit connection pool size
-      minPoolSize: 2,
-      maxIdleTimeMS: 10000,
+      maxPoolSize: 10,
+      minPoolSize: 1,
+      maxIdleTimeMS: 60000, // 60s - reduces reconnect frequency on sporadic traffic
       retryWrites: true,
       retryReads: true,
     };
