@@ -35,6 +35,100 @@ async function checkVotingEligibility(user) {
 }
 
 /**
+ * @route   POST /api/votes/bulk
+ * @desc    Cast all votes in a single request
+ * @access  Private (User)
+ */
+exports.castBulkVotes = catchAsync(async (req, res, next) => {
+  const { votes } = req.body;
+  const userId = req.user.id;
+
+  if (!Array.isArray(votes) || votes.length === 0) {
+    return next(new AppError('votes must be a non-empty array', 400));
+  }
+
+  // Check for duplicate categoryIds in the request itself
+  const requestCategoryIds = votes.map((v) => v.categoryId);
+  if (new Set(requestCategoryIds).size !== requestCategoryIds.length) {
+    return next(new AppError('Duplicate category entries in the request', 400));
+  }
+
+  const user = await User.findById(userId);
+  if (!user) {
+    return next(new AppError('User not found', 404));
+  }
+  if (!user.matricNumber || !user.matricNumber.trim()) {
+    return next(new AppError('Matric number is required to cast a vote. Please complete your profile.', 403));
+  }
+
+  const eligibility = await checkVotingEligibility(user);
+  if (!eligibility.canVote) {
+    return next(new AppError(eligibility.reason || 'You are not eligible to vote.', 403));
+  }
+
+  // Fetch all categories and candidates in parallel
+  const [allActiveCategories, allCandidates] = await Promise.all([
+    Category.find({ isActive: true }),
+    Candidate.find({ category: { $in: requestCategoryIds } }),
+  ]);
+
+  const activeCategoryMap = new Map(allActiveCategories.map((c) => [c._id.toString(), c]));
+  const candidateMap = new Map(allCandidates.map((c) => [c._id.toString(), c]));
+
+  // Validate each vote entry
+  for (const v of votes) {
+    if (!v.categoryId) {
+      return next(new AppError('Each vote must include a categoryId', 400));
+    }
+    const category = activeCategoryMap.get(v.categoryId);
+    if (!category) {
+      return next(new AppError(`Category not found or inactive: ${v.categoryId}`, 404));
+    }
+    if (v.candidateId) {
+      const candidate = candidateMap.get(v.candidateId);
+      if (!candidate) {
+        return next(new AppError(`Candidate not found: ${v.candidateId}`, 404));
+      }
+      if (candidate.category.toString() !== v.categoryId) {
+        return next(new AppError(`Candidate does not belong to the specified category`, 400));
+      }
+    } else if (!category.allowAbstain) {
+      return next(new AppError(`Category "${category.title}" does not allow abstain votes`, 400));
+    }
+  }
+
+  // Check if user has already voted in any of these categories
+  const existingVotes = await Vote.find({ user: userId, category: { $in: requestCategoryIds } });
+  if (existingVotes.length > 0) {
+    const already = existingVotes.map((v) => activeCategoryMap.get(v.category.toString())?.title || v.category).join(', ');
+    return next(new AppError(`You have already voted in: ${already}`, 400));
+  }
+
+  // Build vote documents and insert all at once
+  const voteDocs = votes.map((v) => ({
+    user: userId,
+    category: v.categoryId,
+    candidate: v.candidateId || null,
+    isAbstain: !v.candidateId,
+  }));
+
+  const createdVotes = await Vote.insertMany(voteDocs, { ordered: true });
+
+  // Mark user as hasVoted if they've now covered all active categories
+  const totalUserVotes = await Vote.countDocuments({ user: userId });
+  if (totalUserVotes >= allActiveCategories.length) {
+    user.hasVoted = true;
+    await user.save();
+  }
+
+  res.status(201).json({
+    status: 'success',
+    results: createdVotes.length,
+    data: { votes: createdVotes },
+  });
+});
+
+/**
  * @route   GET /api/votes/eligibility
  * @desc    Check if current user is eligible to vote
  * @access  Private (User)
