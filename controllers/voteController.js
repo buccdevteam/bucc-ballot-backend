@@ -114,11 +114,15 @@ exports.castBulkVotes = catchAsync(async (req, res, next) => {
 
   const createdVotes = await Vote.insertMany(voteDocs, { ordered: true });
 
-  // Mark user as hasVoted if they've now covered all active categories
+  // Mark user as hasVoted if they've voted in all voteable categories (active + have candidates)
+  const voteableCategoryIds = await Candidate.distinct('category');
+  const voteableCount = await Category.countDocuments({
+    _id: { $in: voteableCategoryIds },
+    isActive: true,
+  });
   const totalUserVotes = await Vote.countDocuments({ user: userId });
-  if (totalUserVotes >= allActiveCategories.length) {
-    user.hasVoted = true;
-    await user.save();
+  if (voteableCount > 0 && totalUserVotes >= voteableCount) {
+    await User.findByIdAndUpdate(userId, { hasVoted: true });
   }
 
   res.status(201).json({
