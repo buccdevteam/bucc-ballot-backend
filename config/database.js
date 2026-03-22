@@ -27,15 +27,17 @@ const connectDB = async () => {
   }
 
   try {
-    // Connection options optimized for serverless
-    // maxIdleTimeMS: 60000 = keep connections 60s to avoid frequent reconnects
-    // serverSelectionTimeoutMS: 15s to allow cold Atlas clusters to wake
+    // Connection options aligned with bucc-website-backend + serverless optimizations
+    // connectTimeoutMS: explicit 10s - avoids default/short timeouts (e.g. 1500ms) on cold starts
+    // heartbeatFrequencyMS: keeps connection alive and detects drops promptly
     const options = {
-      serverSelectionTimeoutMS: 15000,
+      serverSelectionTimeoutMS: 15000, // 15s - allow cold Atlas clusters to wake
       socketTimeoutMS: 45000,
+      connectTimeoutMS: 10000,         // 10s - prevents premature timeout on initial connect
+      heartbeatFrequencyMS: 10000,     // 10s - maintain connection health
       maxPoolSize: 10,
       minPoolSize: 1,
-      maxIdleTimeMS: 60000, // 60s - reduces reconnect frequency on sporadic traffic
+      maxIdleTimeMS: 60000,           // 60s - reduces reconnect frequency on sporadic traffic
       retryWrites: true,
       retryReads: true,
     };
