@@ -13,8 +13,16 @@ const connectDB = require('./config/database');
 // Initialize Express app
 const app = express();
 
-// Initialize database connection at startup
-connectDB();
+// Ensure DB is connected before handling API requests (critical for Vercel serverless cold starts)
+app.use('/api', async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    console.error('API request blocked - DB not connected:', err.message);
+    next(err);
+  }
+});
 
 // Trust proxy (important if behind reverse proxy like nginx)
 app.set('trust proxy', 1);
