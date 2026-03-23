@@ -12,6 +12,27 @@ const VALID_EMAIL_DOMAIN = '@student.babcock.edu.ng';
 const DEFAULT_ELIGIBILITY_DEPARTMENT = 'bucc';
 
 /**
+ * Normalize name for comparison: trim, lowercase, collapse multiple spaces
+ */
+function normalizeName(str) {
+  if (!str || typeof str !== 'string') return '';
+  return str.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * Check if provided name matches roster name (at least one name part must match).
+ * Splits into words and requires at least one word to appear in both.
+ */
+function nameMatchesRoster(providedName, rosterName) {
+  const a = normalizeName(providedName);
+  const b = normalizeName(rosterName);
+  if (!a || !b) return true; // Skip check if either is empty
+  const wordsA = a.split(/\s+/).filter(Boolean);
+  const wordsB = b.split(/\s+/).filter(Boolean);
+  return wordsA.some((wa) => wordsB.includes(wa));
+}
+
+/**
  * Helper to send token and user in response (for login/register)
  */
 function sendUserToken(user, statusCode, res) {
@@ -63,6 +84,10 @@ exports.register = catchAsync(async (req, res, next) => {
     return next(new AppError('Your matric number is not in the list of eligible voters. Please contact support.', 403));
   }
 
+  if (validVoter.name && !nameMatchesRoster(name, validVoter.name)) {
+    return next(new AppError('The name you provided does not match the name on the student roster for this matric number. Please use the name as it appears on the roster.', 403));
+  }
+
   let user = await User.findOne({ email: emailLower });
 
   if (user) {
@@ -107,7 +132,11 @@ exports.login = catchAsync(async (req, res, next) => {
 
   const user = await User.findOne({ email: email.toLowerCase().trim() }).select('+password');
 
-  if (!user || !user.password) {
+  if (!user) {
+    return next(new AppError('You do not have an account yet. Please create one to sign in.', 401));
+  }
+
+  if (!user.password) {
     return next(new AppError('Incorrect email or password', 401));
   }
 
