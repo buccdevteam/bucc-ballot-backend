@@ -1,5 +1,6 @@
 /**
  * Candidate Routes
+ * Uses multipart/form-data for create/update - photos go to Cloudinary, not base64.
  */
 
 const express = require('express');
@@ -15,6 +16,7 @@ const {
 } = require('../controllers/candidateController');
 const { protect, restrictTo } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
+const { upload } = require('../middleware/upload');
 
 const router = express.Router();
 
@@ -27,7 +29,7 @@ const adminRouter = express.Router();
 adminRouter.use(protect);
 adminRouter.use(restrictTo('admin', 'super-admin'));
 
-// Validation rules
+// Validation rules for create (photo comes from file upload, not body)
 const createCandidateValidation = [
   body('name')
     .trim()
@@ -35,18 +37,6 @@ const createCandidateValidation = [
     .withMessage('Candidate name is required')
     .isLength({ min: 2, max: 100 })
     .withMessage('Name must be between 2 and 100 characters'),
-  body('photoURL')
-    .trim()
-    .notEmpty()
-    .withMessage('Photo URL is required')
-    .custom((value) => {
-      const isUrl = /^https?:\/\/.+/.test(value);
-      const isDataUrl = /^data:image\/[a-zA-Z]+;base64,.+/.test(value);
-      if (!isUrl && !isDataUrl) {
-        throw new Error('Photo URL must be a valid URL or base64 data URL');
-      }
-      return true;
-    }),
   body('manifesto')
     .trim()
     .notEmpty()
@@ -72,24 +62,13 @@ const createCandidateValidation = [
     .withMessage('Category must be a valid MongoDB ID'),
 ];
 
+// Validation rules for update (all fields optional; photo from file if provided)
 const updateCandidateValidation = [
   body('name')
     .optional()
     .trim()
     .isLength({ min: 2, max: 100 })
     .withMessage('Name must be between 2 and 100 characters'),
-  body('photoURL')
-    .optional()
-    .trim()
-    .custom((value) => {
-      if (!value) return true;
-      const isUrl = /^https?:\/\/.+/.test(value);
-      const isDataUrl = /^data:image\/[a-zA-Z]+;base64,.+/.test(value);
-      if (!isUrl && !isDataUrl) {
-        throw new Error('Photo URL must be a valid URL or base64 data URL');
-      }
-      return true;
-    }),
   body('manifesto')
     .optional()
     .trim()
@@ -111,16 +90,16 @@ const updateCandidateValidation = [
     .withMessage('Category must be a valid MongoDB ID'),
 ];
 
-// Admin routes
+// Admin routes with upload middleware for create/update
 adminRouter
   .route('/')
   .get(getAllCandidatesAdmin)
-  .post(createCandidateValidation, validate, createCandidate);
+  .post(upload.single('photo'), createCandidateValidation, validate, createCandidate);
 
 adminRouter
   .route('/:id')
   .get(getCandidate)
-  .patch(updateCandidateValidation, validate, updateCandidate)
+  .patch(upload.single('photo'), updateCandidateValidation, validate, updateCandidate)
   .delete(deleteCandidate);
 
 module.exports = { publicRouter: router, adminRouter };

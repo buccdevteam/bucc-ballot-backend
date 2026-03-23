@@ -51,9 +51,9 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 
-// Body parser middleware (5mb to allow candidate photos as base64 data URLs)
-app.use(express.json({ limit: '5mb' }));
-app.use(express.urlencoded({ extended: true, limit: '5mb' }));
+// Body parser middleware (1mb; candidate photos use multipart + Cloudinary, not base64)
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Cookie parser middleware
 app.use(cookieParser());

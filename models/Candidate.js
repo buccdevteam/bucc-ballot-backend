@@ -15,6 +15,11 @@ const candidateSchema = new mongoose.Schema({
     required: [true, 'Please provide a photo URL'],
     trim: true,
   },
+  cloudinaryPublicId: {
+    type: String,
+    trim: true,
+    default: undefined,
+  },
   manifesto: {
     type: String,
     required: [true, 'Please provide a manifesto'],
