@@ -3,6 +3,7 @@
  */
 
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 
 const userSchema = new mongoose.Schema({
   email: {
@@ -12,6 +13,11 @@ const userSchema = new mongoose.Schema({
     lowercase: true,
     trim: true,
     match: [/^\S+@\S+\.\S+$/, 'Please provide a valid email'],
+  },
+  password: {
+    type: String,
+    minlength: [6, 'Password must be at least 6 characters'],
+    select: false,
   },
   name: {
     type: String,
@@ -32,7 +38,7 @@ const userSchema = new mongoose.Schema({
   provider: {
     type: String,
     enum: ['google', 'credentials'],
-    default: 'google',
+    default: 'credentials',
   },
   googleId: {
     type: String,
@@ -51,6 +57,18 @@ const userSchema = new mongoose.Schema({
     type: Date,
   },
 });
+
+// Hash password before saving (only if modified)
+userSchema.pre('save', async function () {
+  if (!this.isModified('password') || !this.password) return;
+  this.password = await bcrypt.hash(this.password, 12);
+});
+
+// Instance method to check password
+userSchema.methods.correctPassword = async function (candidatePassword) {
+  if (!this.password) return false;
+  return await bcrypt.compare(candidatePassword, this.password);
+};
 
 // Instance method to update last login
 userSchema.methods.updateLastLogin = async function () {

@@ -9,7 +9,6 @@ const compression = require('compression');
 const morgan = require('morgan');
 const { globalErrorHandler } = require('./middleware/errorHandler');
 const connectDB = require('./config/database');
-const passport = require('./config/passport');
 
 // Initialize Express app
 const app = express();
@@ -50,11 +49,6 @@ app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // Cookie parser middleware
 app.use(cookieParser());
-
-// Initialize Passport middleware
-app.use(passport.initialize());
-
-
 
 // Prevent HTTP Parameter Pollution
 app.use(hpp());
@@ -110,7 +104,7 @@ app.get('/', (req, res) => {
   });
 });
 
-// User authentication routes (Google OAuth)
+// User authentication routes (Email & Password)
 app.use('/api/auth', userAuthRoutes);
 
 // Admin authentication routes

@@ -3,41 +3,120 @@
  */
 
 const User = require('../models/User');
+const ValidVoter = require('../models/ValidVoter');
 const { AppError } = require('../middleware/errorHandler');
 const catchAsync = require('../utils/catchAsync');
-const { createSendToken, signToken } = require('../utils/generateToken');
+const { signToken } = require('../utils/generateToken');
+
+const VALID_EMAIL_DOMAIN = '@student.babcock.edu.ng';
+const DEFAULT_ELIGIBILITY_DEPARTMENT = 'bucc';
 
 /**
- * @route   GET /api/auth/google
- * @desc    Initiate Google OAuth login
+ * Helper to send token and user in response (for login/register)
+ */
+function sendUserToken(user, statusCode, res) {
+  const token = signToken(user._id, 'user');
+  const userObj = user.toObject ? user.toObject() : user;
+  delete userObj.password;
+
+  res.status(statusCode).json({
+    status: 'success',
+    token,
+    data: {
+      user: {
+        id: userObj._id,
+        email: userObj.email,
+        name: userObj.name,
+        photoURL: userObj.photoURL,
+        matricNumber: userObj.matricNumber,
+        department: userObj.department,
+        hasVoted: userObj.hasVoted,
+      },
+    },
+  });
+}
+
+/**
+ * @route   POST /api/auth/register
+ * @desc    Register a new user (must be in valid voter list)
  * @access  Public
  */
-exports.googleAuth = catchAsync(async (req, res, next) => {
-  // This will be handled by passport middleware
-  // Just redirect to Google OAuth
+exports.register = catchAsync(async (req, res, next) => {
+  const { email, password, name, matricNumber } = req.body;
+
+  if (!email || !password || !name || !matricNumber) {
+    return next(new AppError('Please provide email, password, name, and matric number', 400));
+  }
+
+  const emailLower = email.toLowerCase().trim();
+  if (!emailLower.endsWith(VALID_EMAIL_DOMAIN)) {
+    return next(new AppError('Only Babcock University student emails (@student.babcock.edu.ng) are allowed', 400));
+  }
+
+  const matricUpper = matricNumber.trim().toUpperCase();
+  const validVoter = await ValidVoter.findOne({
+    matricNumber: matricUpper,
+    department: { $regex: new RegExp(`^${DEFAULT_ELIGIBILITY_DEPARTMENT}$`, 'i') },
+  });
+
+  if (!validVoter) {
+    return next(new AppError('Your matric number is not in the list of eligible voters. Please contact support.', 403));
+  }
+
+  let user = await User.findOne({ email: emailLower });
+
+  if (user) {
+    if (user.provider === 'credentials') {
+      return next(new AppError('Account already exists. Please log in.', 400));
+    }
+    // Migrate Google user to credentials
+    user.password = password;
+    user.provider = 'credentials';
+    user.googleId = undefined;
+    user.name = name.trim();
+    user.matricNumber = matricUpper;
+    user.department = validVoter.department;
+    await user.save({ validateBeforeSave: true });
+  } else {
+    user = await User.create({
+      email: emailLower,
+      password,
+      name: name.trim(),
+      matricNumber: matricUpper,
+      department: validVoter.department,
+      provider: 'credentials',
+      hasVoted: false,
+    });
+  }
+
+  await user.updateLastLogin();
+  sendUserToken(user, 201, res);
 });
 
 /**
- * @route   GET /api/auth/google/callback
- * @desc    Google OAuth callback
+ * @route   POST /api/auth/login
+ * @desc    Login with email and password
  * @access  Public
  */
-exports.googleCallback = catchAsync(async (req, res, next) => {
-  // This will be handled by passport middleware
-  // After successful authentication, create JWT and redirect
-  if (req.user) {
-    const token = signToken(req.user._id, 'user');
-    
-    // Update last login
-    await req.user.updateLastLogin();
+exports.login = catchAsync(async (req, res, next) => {
+  const { email, password } = req.body;
 
-    // Redirect to frontend with token
-    const frontendURL = process.env.FRONTEND_URL || 'http://localhost:4060';
-    res.redirect(`${frontendURL}/auth/callback?token=${token}&success=true`);
-  } else {
-    const frontendURL = process.env.FRONTEND_URL || 'http://localhost:4060';
-    res.redirect(`${frontendURL}/auth/callback?success=false&error=Authentication failed`);
+  if (!email || !password) {
+    return next(new AppError('Please provide email and password', 400));
   }
+
+  const user = await User.findOne({ email: email.toLowerCase().trim() }).select('+password');
+
+  if (!user || !user.password) {
+    return next(new AppError('Incorrect email or password', 401));
+  }
+
+  if (!(await user.correctPassword(password))) {
+    return next(new AppError('Incorrect email or password', 401));
+  }
+
+  await user.updateLastLogin();
+  sendUserToken(user, 200, res);
 });
 
 /**
