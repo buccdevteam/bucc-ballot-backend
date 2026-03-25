@@ -20,14 +20,14 @@ const seedAdmin = async () => {
     // Create admin user
     const admin = await Admin.create({
       email: 'admin@bucc.edu.ng',
-      password: 'admin123', 
+      password: 'adminPass', 
       name: 'Admin User',
       role: 'admin',
     });
 
     console.log('✅ Admin user created successfully!');
     console.log('Email:', admin.email);
-    console.log('Password: admin123');
+    console.log('Password:', admin.password);
     console.log('⚠️  Please change the password after first login!');
     
     process.exit(0);

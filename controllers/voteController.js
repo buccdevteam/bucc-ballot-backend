@@ -2,6 +2,7 @@
  * Vote Controller
  */
 
+const mongoose = require('mongoose');
 const Vote = require('../models/Vote');
 const User = require('../models/User');
 const ValidVoter = require('../models/ValidVoter');
@@ -9,6 +10,7 @@ const Category = require('../models/Category');
 const Candidate = require('../models/Candidate');
 const { AppError } = require('../middleware/errorHandler');
 const catchAsync = require('../utils/catchAsync');
+const { resolveSenatorEligibleRosterDepartment } = require('../utils/senatorEligibility');
 
 const DEFAULT_ELIGIBILITY_DEPARTMENT = 'bucc';
 const VALID_EMAIL_DOMAIN = '@student.babcock.edu.ng';
@@ -325,7 +327,7 @@ exports.getVotingStatus = catchAsync(async (req, res) => {
 exports.getAllVotes = catchAsync(async (req, res) => {
   const votes = await Vote.find()
     .populate([
-      { path: 'user', select: 'email name' },
+      { path: 'user', select: 'email name matricNumber' },
       { path: 'category', select: 'title' },
       { path: 'candidate', select: 'name' },
     ])
@@ -389,51 +391,242 @@ exports.getVoteStats = catchAsync(async (req, res) => {
   });
 });
 
-/**
- * @route   GET /api/admin/votes/category/:categoryId
- * @desc    Get votes for a specific category (admin only)
- * @access  Private (Admin)
- */
-exports.getVotesByCategory = catchAsync(async (req, res, next) => {
-  const { categoryId } = req.params;
+async function getValidVoterMatricSet(rosterDepartmentLabel) {
+  const escaped = String(rosterDepartmentLabel).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const voters = await ValidVoter.find({
+    department: new RegExp(`^${escaped}$`, 'i'),
+  })
+    .select('matricNumber')
+    .lean();
 
-  const category = await Category.findById(categoryId);
-  if (!category) {
-    return next(new AppError('Category not found', 404));
-  }
+  return new Set(
+    voters
+      .map((v) => String(v.matricNumber || '').toUpperCase().trim())
+      .filter(Boolean)
+  );
+}
 
-  const votes = await Vote.find({ category: categoryId })
-    .populate([
-      { path: 'user', select: 'email name' },
-      { path: 'candidate', select: 'name photoURL' },
-    ])
-    .sort({ createdAt: -1 });
-
-  // Calculate vote counts
+function countVotesFromDocuments(votes) {
   const voteCounts = {
     total: votes.length,
-    abstain: votes.filter(v => v.isAbstain).length,
+    abstain: votes.filter((v) => v.isAbstain).length,
     candidates: {},
   };
 
-  votes.forEach(vote => {
+  votes.forEach((vote) => {
     if (!vote.isAbstain && vote.candidate) {
       const candidateId = vote.candidate._id.toString();
       voteCounts.candidates[candidateId] = (voteCounts.candidates[candidateId] || 0) + 1;
     }
   });
 
-  res.status(200).json({
+  return voteCounts;
+}
+
+function voteMatchesLegibleRoster(voteDoc, rosterDepartment, matricSet) {
+  if (!rosterDepartment) return true;
+  if (!matricSet || matricSet.size === 0) return false;
+  const u = voteDoc.user;
+  if (!u || typeof u !== 'object') return false;
+  const m = String(u.matricNumber || '').toUpperCase().trim();
+  if (!m) return false;
+  return matricSet.has(m);
+}
+
+function paginateArray(arr, page, limit) {
+  const total = arr.length;
+  const totalPages = Math.max(1, Math.ceil(total / limit) || 1);
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const start = (safePage - 1) * limit;
+  return {
+    items: arr.slice(start, start + limit),
+    page: safePage,
+    limit,
+    total,
+    totalPages,
+  };
+}
+
+function voteToJsonWithLegible(voteDoc, rosterDepartment, matricSet, annotate) {
+  const base = typeof voteDoc.toObject === 'function' ? voteDoc.toObject() : { ...voteDoc };
+  if (!annotate) return base;
+  return {
+    ...base,
+    isLegible: voteMatchesLegibleRoster(voteDoc, rosterDepartment, matricSet),
+  };
+}
+
+async function computeVoteCountsAggregate(categoryId) {
+  const catOid = new mongoose.Types.ObjectId(String(categoryId));
+  const total = await Vote.countDocuments({ category: categoryId });
+  const abstain = await Vote.countDocuments({ category: categoryId, isAbstain: true });
+  const agg = await Vote.aggregate([
+    {
+      $match: {
+        category: catOid,
+        isAbstain: false,
+        candidate: { $ne: null },
+      },
+    },
+    { $group: { _id: '$candidate', count: { $sum: 1 } } },
+  ]);
+  const candidates = {};
+  agg.forEach((row) => {
+    if (row._id) candidates[row._id.toString()] = row.count;
+  });
+  return { total, abstain, candidates };
+}
+
+/**
+ * @route   GET /api/admin/votes/category/:categoryId
+ * @query   countsOnly - if true, only aggregates + eligibility (no vote rows)
+ * @query   eligibleOnly - if true, only votes whose matric appears on the senator roster (when rule applies)
+ * @query   page, limit - pagination per candidate / abstain block (default page=1, limit=20)
+ * @desc    Get votes for a specific category (admin only)
+ * @access  Private (Admin)
+ */
+exports.getVotesByCategory = catchAsync(async (req, res, next) => {
+  const { categoryId } = req.params;
+  const countsOnly = req.query.countsOnly === 'true' || req.query.countsOnly === '1';
+  const eligibleOnly = req.query.eligibleOnly === 'true' || req.query.eligibleOnly === '1';
+  const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || '20'), 10) || 20));
+
+  const category = await Category.findById(categoryId);
+  if (!category) {
+    return next(new AppError('Category not found', 404));
+  }
+
+  const rosterDepartment = resolveSenatorEligibleRosterDepartment(category.title);
+  const ruleApplies = !!rosterDepartment;
+
+  let matricSet = null;
+  if (ruleApplies) {
+    matricSet = await getValidVoterMatricSet(rosterDepartment);
+  }
+
+  const voteCounts = await computeVoteCountsAggregate(categoryId);
+
+  let eligibleVoteCounts = null;
+  if (ruleApplies) {
+    const leanVotes = await Vote.find({ category: categoryId })
+      .populate([
+        { path: 'user', select: 'matricNumber' },
+        { path: 'candidate', select: '_id' },
+      ])
+      .lean();
+    const legible = leanVotes.filter((v) =>
+      voteMatchesLegibleRoster(v, rosterDepartment, matricSet)
+    );
+    eligibleVoteCounts = countVotesFromDocuments(legible);
+  }
+
+  const eligibility = {
+    rosterDepartment,
+    ruleApplies,
+  };
+
+  if (countsOnly) {
+    return res.status(200).json({
+      status: 'success',
+      results: voteCounts.total,
+      data: {
+        category: {
+          id: category._id,
+          title: category.title,
+          description: category.description,
+        },
+        voteCounts,
+        eligibleVoteCounts,
+        eligibility,
+        candidates: [],
+        abstain: null,
+      },
+    });
+  }
+
+  const allVotes = await Vote.find({ category: categoryId })
+    .populate([
+      { path: 'user', select: 'email name matricNumber' },
+      { path: 'candidate', select: 'name photoURL' },
+    ])
+    .sort({ createdAt: -1 });
+
+  let workingVotes = allVotes;
+  if (eligibleOnly && ruleApplies) {
+    workingVotes = allVotes.filter((v) =>
+      voteMatchesLegibleRoster(v, rosterDepartment, matricSet)
+    );
+  }
+
+  const candidatesDocs = await Candidate.find({ category: categoryId }).sort({ name: 1 });
+
+  const byCandidate = new Map();
+  candidatesDocs.forEach((c) => byCandidate.set(c._id.toString(), []));
+
+  const abstainList = [];
+  workingVotes.forEach((v) => {
+    if (v.isAbstain) {
+      abstainList.push(v);
+      return;
+    }
+    if (v.candidate) {
+      const id = v.candidate._id.toString();
+      if (!byCandidate.has(id)) byCandidate.set(id, []);
+      byCandidate.get(id).push(v);
+    }
+  });
+
+  const annotateLegible = ruleApplies && !eligibleOnly;
+
+  const candidatesPayload = candidatesDocs.map((c) => {
+    const list = byCandidate.get(c._id.toString()) || [];
+    const paginated = paginateArray(list, page, limit);
+    return {
+      candidate: { id: c._id, name: c.name },
+      votes: paginated.items.map((v) =>
+        voteToJsonWithLegible(v, rosterDepartment, matricSet, annotateLegible)
+      ),
+      pagination: {
+        page: paginated.page,
+        limit: paginated.limit,
+        total: paginated.total,
+        totalPages: paginated.totalPages,
+      },
+    };
+  });
+
+  let abstainPayload = null;
+  if (category.allowAbstain !== false) {
+    const paginatedAbstain = paginateArray(abstainList, page, limit);
+    abstainPayload = {
+      votes: paginatedAbstain.items.map((v) =>
+        voteToJsonWithLegible(v, rosterDepartment, matricSet, annotateLegible)
+      ),
+      pagination: {
+        page: paginatedAbstain.page,
+        limit: paginatedAbstain.limit,
+        total: paginatedAbstain.total,
+        totalPages: paginatedAbstain.totalPages,
+      },
+    };
+  }
+
+  return res.status(200).json({
     status: 'success',
-    results: votes.length,
+    results: voteCounts.total,
     data: {
       category: {
         id: category._id,
         title: category.title,
         description: category.description,
       },
-      votes,
       voteCounts,
+      eligibleVoteCounts,
+      eligibility,
+      eligibleOnlyActive: !!(eligibleOnly && ruleApplies),
+      candidates: candidatesPayload,
+      abstain: abstainPayload,
     },
   });
 });
