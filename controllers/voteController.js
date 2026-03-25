@@ -477,6 +477,36 @@ async function computeVoteCountsAggregate(categoryId) {
   return { total, abstain, candidates };
 }
 
+/** Votes tied to candidate ids that are no longer on the ballot (e.g. deleted candidates). */
+function buildRemovedCandidateSegments(voteCountsCandidates, liveCandidateIdSet) {
+  const segments = [];
+  let total = 0;
+  for (const [candidateId, count] of Object.entries(voteCountsCandidates || {})) {
+    if (!liveCandidateIdSet.has(candidateId)) {
+      total += count;
+      segments.push({ candidateId, count });
+    }
+  }
+  segments.sort((a, b) => b.count - a.count);
+  return { total, segments };
+}
+
+function segmentsFromVoteDocuments(votes) {
+  const tallies = new Map();
+  for (const v of votes) {
+    const cid = v.candidate ? v.candidate.toString() : null;
+    if (!cid) continue;
+    tallies.set(cid, (tallies.get(cid) || 0) + 1);
+  }
+  const segments = [...tallies.entries()].map(([candidateId, count]) => ({
+    candidateId,
+    count,
+  }));
+  segments.sort((a, b) => b.count - a.count);
+  const total = segments.reduce((s, x) => s + x.count, 0);
+  return { total, segments };
+}
+
 /**
  * @route   GET /api/admin/votes/category/:categoryId
  * @query   countsOnly - if true, only aggregates + eligibility (no vote rows)
@@ -526,6 +556,13 @@ exports.getVotesByCategory = catchAsync(async (req, res, next) => {
     ruleApplies,
   };
 
+  const candidatesDocs = await Candidate.find({ category: categoryId }).sort({ name: 1 });
+  const liveCandidateIdSet = new Set(candidatesDocs.map((c) => c._id.toString()));
+  const removedCandidateVotesAll = buildRemovedCandidateSegments(
+    voteCounts.candidates,
+    liveCandidateIdSet
+  );
+
   if (countsOnly) {
     return res.status(200).json({
       status: 'success',
@@ -541,6 +578,8 @@ exports.getVotesByCategory = catchAsync(async (req, res, next) => {
         eligibility,
         candidates: [],
         abstain: null,
+        removedCandidateVotes:
+          removedCandidateVotesAll.total > 0 ? removedCandidateVotesAll : null,
       },
     });
   }
@@ -559,7 +598,26 @@ exports.getVotesByCategory = catchAsync(async (req, res, next) => {
     );
   }
 
-  const candidatesDocs = await Candidate.find({ category: categoryId }).sort({ name: 1 });
+  const liveIds = candidatesDocs.map((c) => c._id);
+  const removedVoteDocs = await Vote.find({
+    category: categoryId,
+    isAbstain: false,
+    candidate: { $ne: null, $nin: liveIds },
+  })
+    .populate([{ path: 'user', select: 'email name matricNumber' }])
+    .sort({ createdAt: -1 });
+
+  let workingRemovedVotes = removedVoteDocs;
+  if (eligibleOnly && ruleApplies) {
+    workingRemovedVotes = removedVoteDocs.filter((v) =>
+      voteMatchesLegibleRoster(v, rosterDepartment, matricSet)
+    );
+  }
+
+  const removedCandidateVotes =
+    eligibleOnly && ruleApplies
+      ? segmentsFromVoteDocuments(workingRemovedVotes)
+      : removedCandidateVotesAll;
 
   const byCandidate = new Map();
   candidatesDocs.forEach((c) => byCandidate.set(c._id.toString(), []));
@@ -612,6 +670,29 @@ exports.getVotesByCategory = catchAsync(async (req, res, next) => {
     };
   }
 
+  let removedCandidatePayload = null;
+  if (removedCandidateVotes.total > 0) {
+    const paginatedRemoved = paginateArray(workingRemovedVotes, page, limit);
+    removedCandidatePayload = {
+      votes: paginatedRemoved.items.map((v) => {
+        const base = voteToJsonWithLegible(
+          v,
+          rosterDepartment,
+          matricSet,
+          annotateLegible
+        );
+        const rid = v.candidate ? v.candidate.toString() : null;
+        return rid ? { ...base, removedCandidateId: rid } : base;
+      }),
+      pagination: {
+        page: paginatedRemoved.page,
+        limit: paginatedRemoved.limit,
+        total: paginatedRemoved.total,
+        totalPages: paginatedRemoved.totalPages,
+      },
+    };
+  }
+
   return res.status(200).json({
     status: 'success',
     results: voteCounts.total,
@@ -627,6 +708,9 @@ exports.getVotesByCategory = catchAsync(async (req, res, next) => {
       eligibleOnlyActive: !!(eligibleOnly && ruleApplies),
       candidates: candidatesPayload,
       abstain: abstainPayload,
+      removedCandidateVotes:
+        removedCandidateVotes.total > 0 ? removedCandidateVotes : null,
+      removedCandidateBallots: removedCandidatePayload,
     },
   });
 });
